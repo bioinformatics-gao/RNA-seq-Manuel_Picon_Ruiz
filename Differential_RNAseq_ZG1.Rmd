@@ -1,7 +1,7 @@
 ---
-title: "Differential analysis template (11/03/2017)"
+title: "Differential analysis template (11/18/2017)"
 author: "ZG modified"
-date: "Nov 03, 2017"
+date: "Nov 18, 2017"
 output: 
 html_document: 
 fig_height: 10
@@ -11,15 +11,15 @@ fig_width: 10
 #### Directory of output (modify code here for different output directory or other projects)
 
 ```{r, echo=FALSE}
-Miyoung_Shin_dir = "/media/2T_Disk/Dropbox/BBSR_P/Miyoung_Shin"
+Manuel_Picon_Ruiz_dir = "/media/2T_Disk/Dropbox/BBSR_P/Manuel_Picon_Ruiz"
 Date = Sys.Date()
-Project = paste0("Miyoung_Shin_", Date)
-count_dir = file.path(Miyoung_Shin_dir, "Count")
-#Out_dir = paste0(Miyoung_Shin_dir, "/Result/", Project, "/")
-Out_dir = paste0(Miyoung_Shin_dir, "/Result/", Project)
+Project = paste0("Manuel_Picon_Ruiz_", Date)
+count_dir = file.path(Manuel_Picon_Ruiz_dir, "Count")
+#Out_dir = paste0(Manuel_Picon_Ruiz_dir, "/Result/", Project, "/")
+Out_dir = paste0(Manuel_Picon_Ruiz_dir, "/Result/", Project)
 dir.create(Out_dir, showWarnings = F)
-dir.create(paste0(Miyoung_Shin_dir, "/Result/"), showWarnings = F)
-GSEA_folder = file.path(Miyoung_Shin_dir, "Result/GSEA/")
+dir.create(paste0(Manuel_Picon_Ruiz_dir, "/Result/"), showWarnings = F)
+GSEA_folder = file.path(Manuel_Picon_Ruiz_dir, "Result/GSEA/")
 dir.create(GSEA_folder, showWarnings = F)
 Out_dir
 ```
@@ -29,7 +29,7 @@ Out_dir
 ```{r}
 # data file
 #cat(paste(dir(count_dir)[!grepl(".summary",dir(count_dir))], collapse="\n"))
-SampleInfo_dir = Miyoung_Shin_dir
+SampleInfo_dir = Manuel_Picon_Ruiz_dir
 ```
 
 ##### Packages 
@@ -82,35 +82,35 @@ merge_featureCount = function(DATA_dir, file_pattern, subtract_pattern = NULL){
     names(Table_merged) = File_name
     Table_merged
 }
-rawdata.Miyoung_Shin = merge_featureCount(count_dir, "STAR_", ".summary")
+rawdata.Manuel_Picon_Ruiz = merge_featureCount(count_dir, "STAR_", ".summary")
 
 # filtering genes with CPM 
-rawdata.Miyoung_Shin.cpms <- cpm(rawdata.Miyoung_Shin)
-head(rawdata.Miyoung_Shin.cpms)
+rawdata.Manuel_Picon_Ruiz.cpms <- cpm(rawdata.Manuel_Picon_Ruiz)
+head(rawdata.Manuel_Picon_Ruiz.cpms)
 ## filter out genes not expressed in at least two samples at 0.5 CPM
-keep <- rowSums(rawdata.Miyoung_Shin.cpms  > 0.5)  >  2  
-rawdata.Miyoung_Shin.filtrcpms <- rawdata.Miyoung_Shin[keep,]
+keep <- rowSums(rawdata.Manuel_Picon_Ruiz.cpms  > 0.5)  >  2  
+rawdata.Manuel_Picon_Ruiz.filtrcpms <- rawdata.Manuel_Picon_Ruiz[keep,]
 
 # sample ID information
-Miyoung_Shin.Stype = read.csv(paste0(SampleInfo_dir,"/SampleID_INFO.csv"),header=T) # add slash
-m.1 = match(colnames(rawdata.Miyoung_Shin), Miyoung_Shin.Stype$ID)
-Miyoung_Shin.Stype = Miyoung_Shin.Stype[m.1, ]
+Manuel_Picon_Ruiz.Stype = read.csv(paste0(SampleInfo_dir,"/SampleID_INFO.csv"),header=T) # add slash
+m.1 = match(colnames(rawdata.Manuel_Picon_Ruiz), Manuel_Picon_Ruiz.Stype$ID)
+Manuel_Picon_Ruiz.Stype = Manuel_Picon_Ruiz.Stype[m.1, ]
 
 # convert groups into factor
-Miyoung_Shin.Stype$TYPE = factor(Miyoung_Shin.Stype$TYPE)
+Manuel_Picon_Ruiz.Stype$TYPE = factor(Manuel_Picon_Ruiz.Stype$TYPE)
 
 # data normalization
 # note: Variance stabilizing apply to precleaning or after-cleaning (remove genes of all 0s) 
 #       are the same
-rawdata.Miyoung_Shin.wo0 = rawdata.Miyoung_Shin[rowSums(rawdata.Miyoung_Shin)>0, ]
-vsd.Miyoung_Shin.wo0 = varianceStabilizingTransformation(as.matrix(rawdata.Miyoung_Shin.wo0)) # need DESeq2
-vsd.Miyoung_Shin = varianceStabilizingTransformation(as.matrix(rawdata.Miyoung_Shin))
+rawdata.Manuel_Picon_Ruiz.wo0 = rawdata.Manuel_Picon_Ruiz[rowSums(rawdata.Manuel_Picon_Ruiz)>0, ]
+vsd.Manuel_Picon_Ruiz.wo0 = varianceStabilizingTransformation(as.matrix(rawdata.Manuel_Picon_Ruiz.wo0)) # need DESeq2
+vsd.Manuel_Picon_Ruiz = varianceStabilizingTransformation(as.matrix(rawdata.Manuel_Picon_Ruiz))
 
 # here we separate data into different batches for the differential analysis
 type.notch = c("231-shScram", "231-shEZH2", "231-DMSO", "231-EPZ5687")   ##### change here 
 
 
-rawdata.notch = rawdata.Miyoung_Shin[, which(c(Miyoung_Shin.Stype$TYPE %in% type.notch))]
+rawdata.notch = rawdata.Manuel_Picon_Ruiz[, which(c(Manuel_Picon_Ruiz.Stype$TYPE %in% type.notch))]
 rawdata.notch.wo0 = rawdata.notch[rowSums(rawdata.notch)>0, ]
 vsd.notch.wo0 = varianceStabilizingTransformation(as.matrix(rawdata.notch.wo0))
 vsd.notch = varianceStabilizingTransformation(as.matrix(rawdata.notch))
@@ -122,11 +122,11 @@ table_hs19ID = read.csv("/media/H_driver/Annotation/gene_table/gene_table_ucsc_h
 #table_mm10ID = read.csv("/media/MyDATA/Genome_Ref/Mus_musculus_UCSC_mm10/Mus_musculus/UCSC/mm10/Annotation/Genes/gene.table.GCvM12.csv", stringsAsFactors = F)
 
 # output a normalized gene expression data
-##norm.data = merge(table_hs19ID, vsd.Miyoung_Shin, by.x = "ensembl_gene_id", by.y = "row.names", sort = F) # ensembl
-norm.data = merge(table_hs19ID, vsd.Miyoung_Shin, by.x = "gene_id", by.y = "row.names", sort = F) # ensembl
-##norm.data = merge(table_hs19ID, vsd.Miyoung_Shin2, by.x = table_hs19ID[,1], by.y =vsd.Miyoung_Shin2[,1], sort = F)
-##norm.data = merge(table_hs19ID, vsd.Miyoung_Shin2, by.x = "ensemble_transcript_id", by.y =vsd.Miyoung_Shin2[,1], sort = F)
-##norm.data = merge(table_hs19ID, vsd.Miyoung_Shin, by.x = table_hs19ID[,1], by.y ="row.names", sort = F)
+##norm.data = merge(table_hs19ID, vsd.Manuel_Picon_Ruiz, by.x = "ensembl_gene_id", by.y = "row.names", sort = F) # ensembl
+norm.data = merge(table_hs19ID, vsd.Manuel_Picon_Ruiz, by.x = "gene_id", by.y = "row.names", sort = F) # ensembl
+##norm.data = merge(table_hs19ID, vsd.Manuel_Picon_Ruiz2, by.x = table_hs19ID[,1], by.y =vsd.Manuel_Picon_Ruiz2[,1], sort = F)
+##norm.data = merge(table_hs19ID, vsd.Manuel_Picon_Ruiz2, by.x = "ensemble_transcript_id", by.y =vsd.Manuel_Picon_Ruiz2[,1], sort = F)
+##norm.data = merge(table_hs19ID, vsd.Manuel_Picon_Ruiz, by.x = table_hs19ID[,1], by.y ="row.names", sort = F)
 
 write.csv(norm.data, file.path(Out_dir, "norm.data.csv"), row.names=T)
 ```
@@ -196,7 +196,7 @@ PCA_3D = function(Data, output_pca, out_dir, g1_level = NULL, g2_level = NULL){
     dev.copy(png, file=paste0(out_dir,"/",output_pca), width=2800, height=2000, res = 300)
     dev.off()
 }
-PCA_3D(vsd.Miyoung_Shin.wo0, "PCA_Miyoung_Shin.png", Out_dir, Miyoung_Shin.Stype$TYPE)
+PCA_3D(vsd.Manuel_Picon_Ruiz.wo0, "PCA_Manuel_Picon_Ruiz.png", Out_dir, Manuel_Picon_Ruiz.Stype$TYPE)
 
 # pca for selected variables
 # 2D pca from jianping_01282016.R
@@ -249,7 +249,7 @@ PCA_2D = function(Data, output_pca, out_dir, g_level, clustering = NULL, label =
            height = 4.25,
            dpi = 600)
 }
-PCA_2D(vsd.Miyoung_Shin.wo0, "PCA2D_Miyoung_Shin.png",Out_dir, Miyoung_Shin.Stype$TYPE)
+PCA_2D(vsd.Manuel_Picon_Ruiz.wo0, "PCA2D_Manuel_Picon_Ruiz.png",Out_dir, Manuel_Picon_Ruiz.Stype$TYPE)
 
 ```
 
@@ -347,9 +347,9 @@ DESeq_2group_wAnno = function(DATA_raw, Sample_ty1, Sample_ty2, Sample_info, Ann
 
 ################### 15 total
 # 1:2, note, the latter one is worked as base, test the changes of the former sample  
-DESeq_2group_wAnno(rawdata.notch, "231-shEZH2","231-shScram", Miyoung_Shin.Stype, table_hs19ID, Out_dir)  #### changed by Zhen
+DESeq_2group_wAnno(rawdata.notch, "231-shEZH2","231-shScram", Manuel_Picon_Ruiz.Stype, table_hs19ID, Out_dir)  #### changed by Zhen
 # 1:3 
-DESeq_2group_wAnno(rawdata.notch,"231-EPZ5687", "231-DMSO", Miyoung_Shin.Stype, table_hs19ID, Out_dir)  #### changed by Zhen
+DESeq_2group_wAnno(rawdata.notch,"231-EPZ5687", "231-DMSO", Manuel_Picon_Ruiz.Stype, table_hs19ID, Out_dir)  #### changed by Zhen
 
 ```
 
@@ -430,9 +430,9 @@ heatmap_2group = function(Data, Pvalue, log2FC, output_heatmap, out_dir, cutoffs
 shEZH2_vs_shScram= read.csv(file.path(Out_dir,"231-shEZH2vs231-shScram.csv")) ####$modified by ZG### 
 
 # vsd.**** is VST normalized counts with rownames are gene ID
-selectID.shEZH2_vs_shScram = match(rownames(vsd.Miyoung_Shin), shEZH2_vs_shScram$gene_id)    #$change "Miyoung_Shin" to your samples ZG##### 
+selectID.shEZH2_vs_shScram = match(rownames(vsd.Manuel_Picon_Ruiz), shEZH2_vs_shScram$gene_id)    #$change "Manuel_Picon_Ruiz" to your samples ZG##### 
 
-heatmap_2group(vsd.Miyoung_Shin[,c(which(Miyoung_Shin.Stype$TYPE=="231-shScram"),which(Miyoung_Shin.Stype$TYPE=="231-shEZH2"))], #### Miyoung_Shin.Stype
+heatmap_2group(vsd.Manuel_Picon_Ruiz[,c(which(Manuel_Picon_Ruiz.Stype$TYPE=="231-shScram"),which(Manuel_Picon_Ruiz.Stype$TYPE=="231-shEZH2"))], #### Manuel_Picon_Ruiz.Stype
                shEZH2_vs_shScram$pvalue[selectID.shEZH2_vs_shScram], 
                shEZH2_vs_shScram$log2FoldChange[selectID.shEZH2_vs_shScram], "shEZH2_vs_shScram", Out_dir)
 
@@ -442,9 +442,9 @@ heatmap_2group(vsd.Miyoung_Shin[,c(which(Miyoung_Shin.Stype$TYPE=="231-shScram")
 # compair group 2, HPNE vs HPNE_K differential test output table
 EPZ5687_vs_DMSO= read.csv(file.path(Out_dir,"231-EPZ5687vs231-DMSO.csv")) ####$modified by ZG### 
 # vsd.**** is VST normalized counts with rownames are gene ID
-selectID.EPZ5687_vs_DMSO = match(rownames(vsd.Miyoung_Shin), EPZ5687_vs_DMSO$gene_id)    #$change "Miyoung_Shin" to your samples ZG##### 
+selectID.EPZ5687_vs_DMSO = match(rownames(vsd.Manuel_Picon_Ruiz), EPZ5687_vs_DMSO$gene_id)    #$change "Manuel_Picon_Ruiz" to your samples ZG##### 
 
-heatmap_2group(vsd.Miyoung_Shin[,c(which(Miyoung_Shin.Stype$TYPE=="231-DMSO"),which(Miyoung_Shin.Stype$TYPE=="231-EPZ5687"))], # to Miyoung_Shin.Stype
+heatmap_2group(vsd.Manuel_Picon_Ruiz[,c(which(Manuel_Picon_Ruiz.Stype$TYPE=="231-DMSO"),which(Manuel_Picon_Ruiz.Stype$TYPE=="231-EPZ5687"))], # to Manuel_Picon_Ruiz.Stype
                EPZ5687_vs_DMSO$pvalue[selectID.EPZ5687_vs_DMSO], 
                EPZ5687_vs_DMSO$log2FoldChange[selectID.EPZ5687_vs_DMSO], "EPZ5687_vs_DMSO", Out_dir)
 
@@ -484,19 +484,19 @@ merge_rsem = function(DATA_dir, file_pattern, subtract_pattern = NULL){
     Table_merged
 }
 
-rsem_dir = "/media/2T_Disk/Dropbox/Zhen_Gao/BBSR_P/Miyoung_Shin/Result/RSEM"
+rsem_dir = "/media/2T_Disk/Dropbox/Zhen_Gao/BBSR_P/Manuel_Picon_Ruiz/Result/RSEM"
 
-fpkm.Miyoung_Shin = merge_rsem(rsem_dir, ".genes.results")
+fpkm.Manuel_Picon_Ruiz = merge_rsem(rsem_dir, ".genes.results")
 
-m.1 = match(Miyoung_Shin.Stype$ID3, colnames(fpkm.Miyoung_Shin)) ### note here, match the names ####
-colnames(fpkm.Miyoung_Shin) = paste(Miyoung_Shin.Stype$SampleID[m.1], Miyoung_Shin.Stype$ID2[m.1], sep = ".")
-write.csv(fpkm.Miyoung_Shin, file.path(Miyoung_Shin_dir, "Miyoung_Shin_2017-11-03", "expression.fpkm.csv"), row.names=T)
+m.1 = match(Manuel_Picon_Ruiz.Stype$ID3, colnames(fpkm.Manuel_Picon_Ruiz)) ### note here, match the names ####
+colnames(fpkm.Manuel_Picon_Ruiz) = paste(Manuel_Picon_Ruiz.Stype$SampleID[m.1], Manuel_Picon_Ruiz.Stype$ID2[m.1], sep = ".")
+write.csv(fpkm.Manuel_Picon_Ruiz, file.path(Manuel_Picon_Ruiz_dir, "Manuel_Picon_Ruiz_2017-11-03", "expression.fpkm.csv"), row.names=T)
 
-#fpkm.Miyoung_Shin.anno = merge(table_hs19ID, fpkm.Miyoung_Shin, by.x = "gene_id", by.y =row.names, sort=F)
+#fpkm.Manuel_Picon_Ruiz.anno = merge(table_hs19ID, fpkm.Manuel_Picon_Ruiz, by.x = "gene_id", by.y =row.names, sort=F)
 # this onw works, the above one not
-fpkm.Miyoung_Shin.anno = merge(table_hs19ID, cbind(fpkm.Miyoung_Shin, gene_id=rownames(fpkm.Miyoung_Shin)), sort=F)
+fpkm.Manuel_Picon_Ruiz.anno = merge(table_hs19ID, cbind(fpkm.Manuel_Picon_Ruiz, gene_id=rownames(fpkm.Manuel_Picon_Ruiz)), sort=F)
 
-write.csv(fpkm.Miyoung_Shin.anno, file.path(Miyoung_Shin_dir, "Miyoung_Shin_2017-11-03", "expr.anno.fpkm.csv"), row.names=T)
+write.csv(fpkm.Manuel_Picon_Ruiz.anno, file.path(Manuel_Picon_Ruiz_dir, "Manuel_Picon_Ruiz_2017-11-03", "expr.anno.fpkm.csv"), row.names=T)
 
 ```
 
