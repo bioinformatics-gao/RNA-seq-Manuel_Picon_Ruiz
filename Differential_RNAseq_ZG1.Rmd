@@ -1,12 +1,14 @@
 ---
 title: "Differential analysis template (11/18/2017)"
-author: "ZG modified"
+author: "ZG modified from James with new annotation"
 date: "Nov 18, 2017"
 output: 
 html_document: 
 fig_height: 10
 fig_width: 10
 ---
+
+### note the annotation files has been unpdated
 
 #### Directory of output (modify code here for different output directory or other projects)
 
