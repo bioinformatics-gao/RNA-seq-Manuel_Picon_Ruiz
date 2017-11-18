@@ -1,0 +1,507 @@
+---
+title: "Differential analysis template (11/03/2017)"
+author: "ZG modified"
+date: "Nov 03, 2017"
+output: 
+html_document: 
+fig_height: 10
+fig_width: 10
+---
+
+#### Directory of output (modify code here for different output directory or other projects)
+
+```{r, echo=FALSE}
+Miyoung_Shin_dir = "/media/2T_Disk/Dropbox/BBSR_P/Miyoung_Shin"
+Date = Sys.Date()
+Project = paste0("Miyoung_Shin_", Date)
+count_dir = file.path(Miyoung_Shin_dir, "Count")
+#Out_dir = paste0(Miyoung_Shin_dir, "/Result/", Project, "/")
+Out_dir = paste0(Miyoung_Shin_dir, "/Result/", Project)
+dir.create(Out_dir, showWarnings = F)
+dir.create(paste0(Miyoung_Shin_dir, "/Result/"), showWarnings = F)
+GSEA_folder = file.path(Miyoung_Shin_dir, "Result/GSEA/")
+dir.create(GSEA_folder, showWarnings = F)
+Out_dir
+```
+
+#### Directory of sample information
+
+```{r}
+# data file
+#cat(paste(dir(count_dir)[!grepl(".summary",dir(count_dir))], collapse="\n"))
+SampleInfo_dir = Miyoung_Shin_dir
+```
+
+##### Packages 
+
+```{r, message=FALSE, eval=TRUE}
+#install.packages("plot3D")
+require("devtools")
+require("ggplot2")
+require("pheatmap")
+require("limma")
+require(ggplot2)
+require(grid)
+require(plot3D)
+require(multtest)
+require(RColorBrewer)
+require(survival)
+require(limma)
+require(edgeR)
+require(plyr)
+require(scales)
+require(DESeq2) # need this one
+require(gplots) #### need this one
+options(scipen=500)
+```
+
+### Load count files and normalized data
+#### Obtaining the sample information and cleaning and normalized raw data
+
+```{r, eval=TRUE}
+# merge raw count table
+merge_featureCount = function(DATA_dir, file_pattern, subtract_pattern = NULL){
+    File_name = dir(DATA_dir)
+    File_name = grep(file_pattern, File_name, value=T)
+    if(!is.null(subtract_pattern)){
+        File_name = File_name[!grepl(subtract_pattern, File_name)]
+    }
+    for(i in 1:length(File_name)){
+        Temp_table = read.table(paste0(DATA_dir,"/",File_name[i]), header=T)
+        Temp_table = Temp_table[,c(1,7)]
+        if(i == 1){
+            Table_merged = Temp_table
+        }else{
+            Table_merged = merge(Table_merged, Temp_table, by = "Geneid", sort = F)
+        }
+    }
+    #sample_name = gsub(".*-(.*)_S.*","\\1", File_name)
+    #sample_name = gsub(".count", "", File_name)
+    rownames(Table_merged) = Table_merged[,"Geneid"]
+    Table_merged[,"Geneid"] = NULL
+    names(Table_merged) = File_name
+    Table_merged
+}
+rawdata.Miyoung_Shin = merge_featureCount(count_dir, "STAR_", ".summary")
+
+# filtering genes with CPM 
+rawdata.Miyoung_Shin.cpms <- cpm(rawdata.Miyoung_Shin)
+head(rawdata.Miyoung_Shin.cpms)
+## filter out genes not expressed in at least two samples at 0.5 CPM
+keep <- rowSums(rawdata.Miyoung_Shin.cpms  > 0.5)  >  2  
+rawdata.Miyoung_Shin.filtrcpms <- rawdata.Miyoung_Shin[keep,]
+
+# sample ID information
+Miyoung_Shin.Stype = read.csv(paste0(SampleInfo_dir,"/SampleID_INFO.csv"),header=T) # add slash
+m.1 = match(colnames(rawdata.Miyoung_Shin), Miyoung_Shin.Stype$ID)
+Miyoung_Shin.Stype = Miyoung_Shin.Stype[m.1, ]
+
+# convert groups into factor
+Miyoung_Shin.Stype$TYPE = factor(Miyoung_Shin.Stype$TYPE)
+
+# data normalization
+# note: Variance stabilizing apply to precleaning or after-cleaning (remove genes of all 0s) 
+#       are the same
+rawdata.Miyoung_Shin.wo0 = rawdata.Miyoung_Shin[rowSums(rawdata.Miyoung_Shin)>0, ]
+vsd.Miyoung_Shin.wo0 = varianceStabilizingTransformation(as.matrix(rawdata.Miyoung_Shin.wo0)) # need DESeq2
+vsd.Miyoung_Shin = varianceStabilizingTransformation(as.matrix(rawdata.Miyoung_Shin))
+
+# here we separate data into different batches for the differential analysis
+type.notch = c("231-shScram", "231-shEZH2", "231-DMSO", "231-EPZ5687")   ##### change here 
+
+
+rawdata.notch = rawdata.Miyoung_Shin[, which(c(Miyoung_Shin.Stype$TYPE %in% type.notch))]
+rawdata.notch.wo0 = rawdata.notch[rowSums(rawdata.notch)>0, ]
+vsd.notch.wo0 = varianceStabilizingTransformation(as.matrix(rawdata.notch.wo0))
+vsd.notch = varianceStabilizingTransformation(as.matrix(rawdata.notch))
+
+# modify here to get the annotation files for your project
+table_hs19ID = read.csv("/media/H_driver/Annotation/gene_table/gene_table_ucsc_hg19_11132017.csv") 
+
+# if data from mouse, use mouse gene annotation and change the annotation table name for the following DE analysis
+#table_mm10ID = read.csv("/media/MyDATA/Genome_Ref/Mus_musculus_UCSC_mm10/Mus_musculus/UCSC/mm10/Annotation/Genes/gene.table.GCvM12.csv", stringsAsFactors = F)
+
+# output a normalized gene expression data
+##norm.data = merge(table_hs19ID, vsd.Miyoung_Shin, by.x = "ensembl_gene_id", by.y = "row.names", sort = F) # ensembl
+norm.data = merge(table_hs19ID, vsd.Miyoung_Shin, by.x = "gene_id", by.y = "row.names", sort = F) # ensembl
+##norm.data = merge(table_hs19ID, vsd.Miyoung_Shin2, by.x = table_hs19ID[,1], by.y =vsd.Miyoung_Shin2[,1], sort = F)
+##norm.data = merge(table_hs19ID, vsd.Miyoung_Shin2, by.x = "ensemble_transcript_id", by.y =vsd.Miyoung_Shin2[,1], sort = F)
+##norm.data = merge(table_hs19ID, vsd.Miyoung_Shin, by.x = table_hs19ID[,1], by.y ="row.names", sort = F)
+
+write.csv(norm.data, file.path(Out_dir, "norm.data.csv"), row.names=T)
+```
+
+#### Make heatmap and PCA plot
+
+```{r, eval=FALSE}
+# heatmap and pca
+# PCA and heatmap
+PCA_3D = function(Data, output_pca, out_dir, g1_level = NULL, g2_level = NULL){
+    #clean data column name
+    colnames(Data) = gsub("STAR_", "", colnames(Data))
+    colnames(Data) = gsub(".count", "", colnames(Data))
+    colnames(Data) = gsub("_R1", "", colnames(Data))
+    
+    hmcol<-rev(colorRampPalette(brewer.pal(9, "Set1"))(256))
+    pch = 16
+    if(is.null(g1_level)){
+        type_level = pch
+        col_level = "black"
+    }else{
+        TEMP = factor(g1_level)
+        uniq_label_1 =  levels(TEMP)
+        levels(TEMP) = hmcol[ceiling(seq(length.out=length(levels(TEMP)),from=1,to=256))]
+        col_level = as.character(TEMP)
+        uniq_col = levels(TEMP)
+        if(!is.null(g2_level)){
+            TEMP = factor(g2_level)
+            uniq_label_2 =  levels(TEMP)
+            levels(TEMP) = as.character(c(19,17,15,18,3,4,7,8,9,10)[1:length(levels(TEMP))])
+            type_level = as.numeric(as.character(TEMP))
+            uniq_type = as.numeric(levels(TEMP))
+        }else{
+            type_level = pch
+        }
+    }
+    
+    #png(file=paste0(out_dir,"/",output_pca), width=2000, height=2000, res = 300)
+    par(mar=c(6.1, 4.1, 1.5, 3.1), xpd=TRUE)
+    par(oma=c(0,0,0,0))
+    Data.pca = prcomp(t(Data))
+    with(data.frame(Data.pca$x), scatter3D(PC1, PC2, PC3, colvar = NULL, 
+                                           type="h", lty.hplot=2, cex=1,
+                                           ticktype = "detailed", nticks = 2,
+                                           bty = "b2", #bty="b2", 
+                                           xlab="PC 1",	ylab="PC 2",zlab="PC 3", 
+                                           theta = -50, phi = 40, 
+                                           pch=type_level,
+                                           col=col_level,
+                                           main = "Principal component analysis")
+    )
+    if(!is.null(g1_level)){
+        legend("right", legend = uniq_label_1, pch=pch, 
+               col = uniq_col, bty= "n", inset=c(-0.07,0), xjust=0,
+               cex=0.7)
+    }
+    if(!is.null(g2_level)){
+        legend("bottomright", legend = uniq_label_2, pch=uniq_type, 
+               col = "grey", bty= "n", inset=c(-0.15,0.1), xjust=0,
+               cex=1)
+    }
+    with(data.frame(Data.pca$x), text3D(x=PC1, y=PC2, 
+                                        z=PC3, 1:ncol(Data), col = "black", add=TRUE, colkey = FALSE, adj=1.7, cex=0.5)
+    )
+    legend("bottom", legend = paste0(1:ncol(Data), ": ", colnames(Data)), pch=0, yjust = 0, 
+           col = "white", cex=0.5, bty= "n", ncol = 4, inset=c(-1.5,-0.3))
+    dev.copy(png, file=paste0(out_dir,"/",output_pca), width=2800, height=2000, res = 300)
+    dev.off()
+}
+PCA_3D(vsd.Miyoung_Shin.wo0, "PCA_Miyoung_Shin.png", Out_dir, Miyoung_Shin.Stype$TYPE)
+
+# pca for selected variables
+# 2D pca from jianping_01282016.R
+PCA_2D = function(Data, output_pca, out_dir, g_level, clustering = NULL, label = FALSE, X_lim = NULL, Y_lim = NULL){
+    tmp.pca = prcomp(t(Data), center = T, scale.=F)
+    Tmp_1 = summary(tmp.pca)
+    var.pc1 = percent(Tmp_1$importance[2, "PC1"])
+    var.pc2 = percent(Tmp_1$importance[2, "PC2"])
+    TEMP = factor(as.character(g_level))
+    uniq_label =  levels(TEMP)
+    levels(TEMP) = rev(colorRampPalette(brewer.pal(9, "Set1"))(256))[ceiling(seq(length.out=length(uniq_label),from=1,to=256))]
+    col_level = as.character(TEMP)
+    TEMP.PCA = data.frame(tmp.pca$x, T_level = g_level, C_level = col_level)
+    if(!is.null(clustering)){
+        TEMP.PCA$Cluster = clustering
+    }
+    if(label){
+        TEMP.PCA$sampleID = rownames(tmp.pca$x)
+    }
+    Temp.plot = ggplot(data = TEMP.PCA, aes(x = PC1, y = PC2, group = T_level))
+    GG = Temp.plot + geom_point(aes(colour = factor(T_level))) + 
+        coord_fixed() +  
+        scale_color_manual(name= "",values = levels(TEMP)) + 
+        theme(panel.background = element_blank(),
+              panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+              panel.border = element_rect(colour = "grey", fill=NA, size=1), 
+              legend.position = "right", legend.direction = "vertical", legend.key = element_blank()) +
+        xlab(paste0("Principal component 1 (", var.pc1, ")")) + 
+        ylab(paste0("Principal component 2 (", var.pc2, ")")) 
+    if(label){
+        GG = GG + geom_text(aes(label=sampleID), size=2.5, hjust = -0.2, nudge_x = 1)
+    }
+    if(!is.null(clustering)){
+        GG = GG + stat_ellipse(aes(group = Cluster), color="black", linetype = 2, type = "t")
+    }
+    # geom_text_repel(data = TEMP.PCA,#subset(CFE.result.aov, raw.pvalue < 0.05),
+    #    aes(x = PC1, y = PC2, label = sampleID),
+    #    size = 1.6,
+    #    box.padding = unit(0.35, "lines"),
+    #    point.padding = unit(0.3, "lines")
+    # )
+    if(!is.null(X_lim)){
+        GG = GG + coord_cartesian(xlim = X_lim)
+    }
+    #print(GG)
+    #dev.off()
+    ggsave(file.path(out_dir, output_pca),
+           GG,
+           width = 6,
+           height = 4.25,
+           dpi = 600)
+}
+PCA_2D(vsd.Miyoung_Shin.wo0, "PCA2D_Miyoung_Shin.png",Out_dir, Miyoung_Shin.Stype$TYPE)
+
+```
+
+### Run DESeq analysis
+
+```{r, eval=TRUE}
+# run DESeq analysis
+# DESeq_2group: comparing trt with control
+# DESeq_mlutigroupLRT: overall test whether there is difference among groups
+DESeq_2group = function(DATA_raw, Sample_ty1, Sample_ty2, Sample_info){
+    cat("Updated 04/08/2017 *use pooled variance from ALL samples*
+      Note: Universal gene name must be gene symbol with column identifying name 'gene_id'\n")
+    cat("   Sample_info must be supplied with the column format 'ID' corresponds colnames(DATA_raw)
+          and 'TYPE' corresponds Sample_ty1 and Sample_ty2\n")
+    options(scipen=500)
+    cat("Matching Sample ID...\n")
+    w.1 = match(Sample_info$ID, colnames(DATA_raw))
+    cat("  all selected sample names:\n")
+    print(colnames(DATA_raw)[w.1])
+    Data_s = DATA_raw[, w.1]
+    if(length(grep("TYPE1", colnames(Sample_info)))==0){
+        Sample_id1 = which(Sample_info$TYPE==Sample_ty1)
+        Sample_id2 = which(Sample_info$TYPE==Sample_ty2)
+        condition = factor(Sample_info$TYPE)
+        dds = DESeqDataSetFromMatrix(Data_s, DataFrame(condition), ~ condition)
+    }else{
+        cat("Samples stratified into multiple types using TYPE2 information\n")
+        Sample_id1 = which(Sample_info$TYPE1==Sample_ty1)
+        Sample_id2 = which(Sample_info$TYPE1==Sample_ty2)
+        condition = factor(Sample_info$TYPE1)
+        type2 = factor(Sample_info$TYPE2)
+        dds = DESeqDataSetFromMatrix(Data_s, DataFrame(data.frame(condition, type2)), ~ condition + type2)
+    }
+    return(results(DESeq(dds), c("condition", Sample_ty1, Sample_ty2)))
+}
+
+# automatic combine differential results with annotated and normalized data
+DESeq_2group_wAnno = function(DATA_raw, Sample_ty1, Sample_ty2, Sample_info, Anno_table, out_dir, 
+                              coldrop_DE = c("lfcSE"), sort.by = "padj", use_log2 = T){
+    cat("Note: Updated 04/08/2017 *use pooled variance from ALL samples*
+      Universal gene name must be gene symbol with column identifying name 'gene_id'\n")
+    cat("   Sample_info must be supplied with the column format 'ID' corresponds colnames(DATA_raw)
+          and 'TYPE' corresponds Sample_ty1 and Sample_ty2\n")
+    options(scipen=500)
+    cat("Matching Sample ID...\n")
+    w.1 = match(Sample_info$ID, colnames(DATA_raw))
+    cat("  all selected sample names:\n")
+    print(colnames(DATA_raw)[w.1])
+    Data_s = DATA_raw[, w.1]
+    if(length(grep("TYPE1", colnames(Sample_info)))==0){
+        Sample_id1 = which(Sample_info$TYPE==Sample_ty1)
+        Sample_id2 = which(Sample_info$TYPE==Sample_ty2)
+        condition = factor(Sample_info$TYPE)
+        dds = DESeqDataSetFromMatrix(Data_s, DataFrame(condition), ~ condition)
+    }else{
+        cat("Samples stratified into multiple types using TYPE2 information\n")
+        Sample_id1 = which(Sample_info$TYPE1==Sample_ty1)
+        Sample_id2 = which(Sample_info$TYPE1==Sample_ty2)
+        condition = factor(Sample_info$TYPE1)
+        type2 = factor(Sample_info$TYPE2)
+        dds = DESeqDataSetFromMatrix(Data_s, DataFrame(data.frame(condition, type2)), ~ condition + type2)
+    }
+    Temp_DE = results(DESeq(dds), c("condition", Sample_ty1, Sample_ty2))
+    if(!use_log2){
+        colnames(Temp_DE)[grep("log2FoldChange", colnames(Temp_DE))] = "FoldChange"
+        Temp_DE$FoldChange = 2^Temp_DE$FoldChange
+        Temp_DE$FoldChange = ifelse(Temp_DE$FoldChange>=1, Temp_DE$FoldChange, -1/Temp_DE$FoldChange)
+    }else{
+        colID_log2FC = grep("log2FoldChange", colnames(Temp_DE))
+        Temp_DE = data.frame(Temp_DE[, 1:colID_log2FC], FoldChange = 2^Temp_DE$log2FoldChange, Temp_DE[, (colID_log2FC+1):ncol(Temp_DE)], check.names = F)
+    }
+    
+    Temp_DE = data.frame(gene_id_DE = rownames(Temp_DE), Temp_DE[, !(colnames(Temp_DE) %in% coldrop_DE)], check.names = F)
+    
+    Sample.name.match = match(c(as.character(Sample_info$ID[Sample_id1]), as.character(Sample_info$ID[Sample_id2])), colnames(DATA_raw))
+    Temp_DEwCount = merge(Temp_DE, data.frame(gene_id_DE = rownames(DATA_raw), DATA_raw[, Sample.name.match], check.names = F), by="gene_id_DE", all.x=F, all.y=T, sort=F)
+    
+    # determine which gene annotation files to use
+    if(colnames(Anno_table)[1]=="gene_id"){
+        Temp_DEwAnno = merge(Anno_table, Temp_DEwCount, by.x = "gene_id", by.y ="gene_id_DE", all.x=F, all.y = T, sort=F)
+    }else{
+        Temp_DEwAnno = merge(Anno_table, Temp_DEwCount, by.x = "gene_id", by.y="gene_id_DE", all.x=F, all.y = T, sort=F)
+    }
+    
+    #print(colnames(Temp_DEwAnno))
+    # sort data
+    if(sort.by=="padj"){
+        write.csv(Temp_DEwAnno[order(Temp_DEwAnno$padj, Temp_DEwAnno$pvalue),], paste0(out_dir, "/", Sample_ty1,"vs",Sample_ty2,".csv"),
+                  row.names=F)
+    }else{
+        write.csv(Temp_DEwAnno, paste0(out_dir, "/", Sample_ty1,"vs",Sample_ty2,".csv"),
+                  row.names=F)
+    }
+}
+
+################### 15 total
+# 1:2, note, the latter one is worked as base, test the changes of the former sample  
+DESeq_2group_wAnno(rawdata.notch, "231-shEZH2","231-shScram", Miyoung_Shin.Stype, table_hs19ID, Out_dir)  #### changed by Zhen
+# 1:3 
+DESeq_2group_wAnno(rawdata.notch,"231-EPZ5687", "231-DMSO", Miyoung_Shin.Stype, table_hs19ID, Out_dir)  #### changed by Zhen
+
+```
+
+
+```{r, eval=TRUE}
+# heat maps
+# two group heatmap comparison, 
+#  select top DE 100 genes
+#  and separate them into up and down groups
+heatmap_2group = function(Data, Pvalue, log2FC, output_heatmap, out_dir, cutoffs = NULL, high_id = NULL, low_id = NULL, dist_fun = "euclidean"){
+    hmcol<-rev(redgreen(50))[-seq(35, 35)] 
+    message("If use cutoffs, the format is cutoffs=c(pval_cutoff, FC_cutoff)\n
+          If use high and low, specify the ids of columns\n")
+    #hmcol<-rev(colorRampPalette(brewer.pal(10, "RdYlGn"))(256))
+    #hmcol<-rev(colorRampPalette(brewer.pal(10, "RdBu"))(256))
+    if(is.null(high_id)&is.null(low_id)){
+        Data = Data
+        heatmap_colorder = 1:ncol(Data)
+    }else{
+        Data = Data[, c(high_id, low_id)]
+        heatmap_colorder = 1:ncol(Data)
+    }
+    if(is.null(cutoffs)){
+        DE.sort = order(Pvalue)[1:100]
+        title_lab = paste0("Top 100 most DE features (", output_heatmap, ")")
+    }else{
+        DE.sort = which((Pvalue < cutoffs[1])&(abs(log2FC) > cutoffs[2]))
+        title_lab = paste0("Features with significant DE (", output_heatmap, ")")
+    }
+    if(length(DE.sort)<=100){
+        labelrow = NULL
+    }else{
+        labelrow = NA
+    }
+    TEMP.data = data.frame(Data[DE.sort,])
+    TEMP.up = TEMP.data[log2FC[DE.sort]>=0,]
+    TEMP.dn = TEMP.data[log2FC[DE.sort]<0,]
+    if(nrow(TEMP.up)>2){
+        Data.up.hc = hclust(dist(TEMP.up), method="average")  
+        rowInd.up <- order.dendrogram(as.dendrogram(Data.up.hc))
+        Temp1 = TEMP.data[log2FC[DE.sort]>=0,][rowInd.up,]
+    }else{
+        Temp1 = TEMP.data[log2FC[DE.sort]>=0,]
+    }
+    if(nrow(TEMP.dn)>2){
+        Data.dn.hc = hclust(dist(TEMP.dn), method="average")
+        rowInd.dn <- order.dendrogram(as.dendrogram(Data.dn.hc))    
+        Temp2 = TEMP.data[log2FC[DE.sort]<0,][rowInd.dn,]
+    }else{
+        Temp2 = TEMP.data[log2FC[DE.sort]<0,]
+    }
+    Temp = rbind(Temp1, Temp2)
+    
+    Data.sorted = as.matrix(Temp)
+    
+    #Data.sorted = t(apply(Data.sorted, 1, scale)) # add scaling by row for clustering????????
+    
+    rownames(Data.sorted) = rownames(Temp)
+    colnames(Data.sorted) = colnames(Data)
+    
+    write.table(data.frame(rownames(Data.sorted)), file = paste0(out_dir,"/",output_heatmap,".genelist.csv"), row.names=F, col.names = F, quote=F)
+    if(nrow(Data.sorted)>1){
+        par(cex.main=0.5)
+        png(file=paste0(out_dir,"/",output_heatmap,".png"), width=2000, height=3600, res=420)
+        heatmap.2(Data.sorted, hclustfun = function(h)hclust(h, method="average"), col=hmcol, 
+                  distfun = function(d)dist(d, method=dist_fun), 
+                  Colv = heatmap_colorder, 
+                  reorderfun = function(d, w)reorder(d, w, mean),
+                  Rowv = F, dendrogram = "column", srtCol = 45, labRow = labelrow, cexRow = 0.5,
+                  scale="row",key=TRUE, keysize=0.5, symkey=FALSE,density.info="none", trace="none",cexCol=0.7,
+                  margins=c(4,5), lwid = c(1,4), lhei = c(0.8,6), key.par=list(mar=c(4, 1, 2, 0)),
+                  main = title_lab) #
+        dev.off()
+    }
+}
+
+# compair group 1,shScram vs shEZH2, differential test output table
+shEZH2_vs_shScram= read.csv(file.path(Out_dir,"231-shEZH2vs231-shScram.csv")) ####$modified by ZG### 
+
+# vsd.**** is VST normalized counts with rownames are gene ID
+selectID.shEZH2_vs_shScram = match(rownames(vsd.Miyoung_Shin), shEZH2_vs_shScram$gene_id)    #$change "Miyoung_Shin" to your samples ZG##### 
+
+heatmap_2group(vsd.Miyoung_Shin[,c(which(Miyoung_Shin.Stype$TYPE=="231-shScram"),which(Miyoung_Shin.Stype$TYPE=="231-shEZH2"))], #### Miyoung_Shin.Stype
+               shEZH2_vs_shScram$pvalue[selectID.shEZH2_vs_shScram], 
+               shEZH2_vs_shScram$log2FoldChange[selectID.shEZH2_vs_shScram], "shEZH2_vs_shScram", Out_dir)
+
+
+
+
+# compair group 2, HPNE vs HPNE_K differential test output table
+EPZ5687_vs_DMSO= read.csv(file.path(Out_dir,"231-EPZ5687vs231-DMSO.csv")) ####$modified by ZG### 
+# vsd.**** is VST normalized counts with rownames are gene ID
+selectID.EPZ5687_vs_DMSO = match(rownames(vsd.Miyoung_Shin), EPZ5687_vs_DMSO$gene_id)    #$change "Miyoung_Shin" to your samples ZG##### 
+
+heatmap_2group(vsd.Miyoung_Shin[,c(which(Miyoung_Shin.Stype$TYPE=="231-DMSO"),which(Miyoung_Shin.Stype$TYPE=="231-EPZ5687"))], # to Miyoung_Shin.Stype
+               EPZ5687_vs_DMSO$pvalue[selectID.EPZ5687_vs_DMSO], 
+               EPZ5687_vs_DMSO$log2FoldChange[selectID.EPZ5687_vs_DMSO], "EPZ5687_vs_DMSO", Out_dir)
+
+```
+
+##############################################################
+
+## calculate FPKM from count
+## currently, hg38 can produce RSEM fold with files, hg19 cannot produce. So I cannot go through the following part 
+
+
+```{r, eval=TRUE}
+# use code from RNAseq_huishi.R
+# merge raw count table
+merge_rsem = function(DATA_dir, file_pattern, subtract_pattern = NULL){
+    File_name = dir(DATA_dir)
+    File_name = grep(file_pattern, File_name, value=T)
+    if(!is.null(subtract_pattern)){
+        File_name = File_name[!grepl(subtract_pattern, File_name)]
+    }
+    for(i in 1:length(File_name)){
+        Temp_table = read.table(paste0(DATA_dir,"/",File_name[i]), header=T)
+        Temp_table = Temp_table[,c(1,7)]
+        colnames(Temp_table)[2] = gsub(file_pattern, "", File_name[i])
+        colnames(Temp_table)[2] = gsub("__STAR", "", colnames(Temp_table)[2])
+        if(i == 1){
+            Table_merged = Temp_table
+        }else{
+            Table_merged = merge(Table_merged, Temp_table, by = "gene_id", sort = F)
+        }
+    }
+    #sample_name = gsub(".*-(.*)_S.*","\\1", File_name)
+    #sample_name = gsub(".count", "", File_name)
+    rownames(Table_merged) = Table_merged[,"gene_id"]
+    Table_merged[,"gene_id"] = NULL
+    #names(Table_merged) = File_name
+    Table_merged
+}
+
+rsem_dir = "/media/2T_Disk/Dropbox/Zhen_Gao/BBSR_P/Miyoung_Shin/Result/RSEM"
+
+fpkm.Miyoung_Shin = merge_rsem(rsem_dir, ".genes.results")
+
+m.1 = match(Miyoung_Shin.Stype$ID3, colnames(fpkm.Miyoung_Shin)) ### note here, match the names ####
+colnames(fpkm.Miyoung_Shin) = paste(Miyoung_Shin.Stype$SampleID[m.1], Miyoung_Shin.Stype$ID2[m.1], sep = ".")
+write.csv(fpkm.Miyoung_Shin, file.path(Miyoung_Shin_dir, "Miyoung_Shin_2017-11-03", "expression.fpkm.csv"), row.names=T)
+
+#fpkm.Miyoung_Shin.anno = merge(table_hs19ID, fpkm.Miyoung_Shin, by.x = "gene_id", by.y =row.names, sort=F)
+# this onw works, the above one not
+fpkm.Miyoung_Shin.anno = merge(table_hs19ID, cbind(fpkm.Miyoung_Shin, gene_id=rownames(fpkm.Miyoung_Shin)), sort=F)
+
+write.csv(fpkm.Miyoung_Shin.anno, file.path(Miyoung_Shin_dir, "Miyoung_Shin_2017-11-03", "expr.anno.fpkm.csv"), row.names=T)
+
+```
+
+
+
+
+
+
